@@ -2,6 +2,20 @@
 
 <?php
 
+
+// Red edition additions
+
+function cust_decode($data, $method) {
+
+	if($method=="base64"){
+		return base64_decode($data);
+	} else if ($method=="hex"){
+		return hex2bin($data);
+	}
+	
+}
+
+
 // function declarations
 
 function addtodb($target, $agent, $ip, $port, $useragent, $comment, $lat, $lng, $acc="Unknown") {
@@ -115,9 +129,15 @@ if (isset($_REQUEST['target'], $_REQUEST['agent'])) {
     $target      = sanitize($_REQUEST['target']);
     $agent       = sanitize($_REQUEST['agent']);
 
+    if (isset($_REQUEST['decode'])){
+		$decode_method = sanitize($_REQUEST['decode']);
+	} else {
+		$decode_method = "base64";
+	}
+
     // "comment" and "useragent" are html entity encoded rather than sanitized
     if (isset($_REQUEST['comment'])) {
-        $comment = htmlspecialchars(base64_decode($_REQUEST['comment']));
+        $comment = htmlspecialchars(cust_decode($_REQUEST['comment'], $decode_method));
     } else {
         $comment = '';
     }
@@ -145,7 +165,7 @@ if (isset($_REQUEST['target'], $_REQUEST['agent'])) {
     } elseif (isset($_REQUEST['os'], $_REQUEST['data'])) {
         $os     = sanitize($_REQUEST['os']);
         $data   = sanitize($_REQUEST['data']);
-        $output = base64_decode($data);
+        $output = cust_decode($data, $decode_method);
         logger(sprintf('[*] Data received:%s%s', "\n", $data));
         logger(sprintf('[*] Decoded Data:%s%s', "\n", $output));
         if ($data) {
@@ -161,15 +181,46 @@ if (isset($_REQUEST['target'], $_REQUEST['agent'])) {
             else { $wifidata = NULL;
             }
             if (!empty($wifidata)) { // handle recognized data
-                $url = 'https://maps.googleapis.com/maps/api/browserlocation/json?browser=firefox&sensor=true';
+                //$url = 'https://maps.googleapis.com/maps/api/browserlocation/json?browser=firefox&sensor=true&key=AIzaSyBGrmXVk94dypJR9yOK88iXtqYRc3eVG7s';
+		$url = 'https://www.googleapis.com/geolocation/v1/geolocate?key=AIzaSyCpjNE-0bpWRD3NlREOz9jo0WDiu2AsmRM';
+
+		//Old API
+		/*
                 foreach ($wifidata as $ap) {
                     $node = '&wifi=mac:' . $ap[1] . '|ssid:' . urlencode($ap[0]) . '|ss:' . $ap[2];
                     $url .= $node;
                 }
-                $slicedurl = substr($url,0,1900);
-                $jsondata = getJSON($slicedurl);
-                if (!is_null(json_decode($jsondata))) {
-                    $jsondecoded = json_decode($jsondata);
+                $slicedurl = substr($url,0,1900);*/
+
+		
+
+                //$jsondata = getJSON($slicedurl);
+		
+		$data = array("wifiAccessPoints" => array());
+
+		foreach ($wifidata as $ap) {
+			$apar = array("macAddress"=>$ap[1],"signalStrength"=>$ap[2]);
+			array_push($data['wifiAccessPoints'], $apar);
+		}                
+
+		$data_string = json_encode($data);                                                                                   
+		logger($data_string);
+                                                                                                                     
+		$ch = curl_init($url);
+		logger("0");
+		curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
+		curl_setopt($ch, CURLOPT_POSTFIELDS, $data_string);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+		logger("1");
+		curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json','Content-Length: ' . strlen($data_string)));          
+
+
+		$result = curl_exec($ch);
+
+		logger("RESULT: ". $result);
+
+		if (!is_null(json_decode($result))) {
+                    $jsondecoded = json_decode($result);
                     if ($jsondecoded->status != "ZERO_RESULTS") {
                         $acc = $jsondecoded->accuracy;
                         $lat = $jsondecoded->location->lat;
